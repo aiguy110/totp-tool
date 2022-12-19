@@ -7,9 +7,11 @@ edition = "2021"
 
 [dependencies]
 self-storage = { git = "https://github.com/aiguy110/self-storage", branch = "master" }
-
 clap = { version = "3.1.12", features = ["derive"] }
 serde = "1.0"
 serde_yaml = "0.9"
 totp-rs = { version = "3.0.1", features = ["otpauth", "serde_support"] }
 cli-clipboard = "*"
+bardecoder = "0.3.0"
+image = "0.23"
+anyhow = "*"

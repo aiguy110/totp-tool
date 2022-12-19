@@ -1,8 +1,10 @@
-use std::{io::{Write, Cursor}, process};
-
+use std::{io::{Write, Cursor}, process, error::Error, path::PathBuf};
 use clap::{Parser, Subcommand, CommandFactory, Command, FromArgMatches, error::{ContextKind, ContextValue}};
 use totp_rs::TOTP;
 use serde::{Serialize, Deserialize};
+
+mod generic_error;
+use generic_error::GenericError;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -182,7 +184,7 @@ fn do_use(label: String, current_label: &mut Option<String>, cfg: &GeneralConfig
     }
 }
 
-fn do_add(url: String, mut label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
+fn do_add(url: String, label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
     let colon_pos = url.find(':');
     if matches!(colon_pos, None) {
         println!("Invalid URL: \"{}\"", url);
@@ -190,42 +192,86 @@ fn do_add(url: String, mut label: Option<String>, current_label: &mut Option<Str
     }
     let scheme = &url[..colon_pos.unwrap()];
     match scheme {
-        "otpauth" => { match TOTP::<Vec<u8>>::from_url(url) {
-                Err(e) => {
-                    println!("Error processing URL: {}", e);
-                    return;
-                } 
-                Ok(totp) => {
-                    if matches!(label, None) {
-                        if totp.account_name.trim() == "" {
-                            println!("URL contains no label and no label was provided. Cannot add this URL.");
-                            return;
-                        }
-                        label = Some(totp.account_name.clone())
-                    }
-                    if label_exists(label.as_ref().unwrap(), cfg) {
-                        println!("Label \"{}\" already exists. Not adding this URL.", label.as_ref().unwrap());
-                        return;
-                    }
-                    cfg.available_totps.push( TotpConfig {
-                        label: label.clone().unwrap(),
-                        totp_details: totp
-                    });
-                    if cfg.available_totps.len() == 1 {
-                        cfg.default_totp = label.clone();
-                        *current_label = label;
-                    }
-                },
-            }
+        "otpauth" => {
+            add_otpauth_url(url, label, current_label, cfg);
         }
         "otpauth-migration" => {
-            println!("Sorry, \"otpauth-migration\" URLs aren't supported yet. But they're coming soon!");
-            return;
+            add_otpauth_migration(url, label, current_label, cfg);
+        },
+        "qr-path" => {
+            add_qr_path_url(url, label, current_label, cfg);
         }
         _ => {
-            println!("Unrecognized URL scheme \"{}\"", scheme)
+            println!("Unrecognized URL scheme \"{}\"", scheme);
         }
     }
+}
+
+fn add_otpauth_url(url: String, mut label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
+    match TOTP::<Vec<u8>>::from_url(url) {
+        Err(e) => {
+            println!("Error processing URL: {}", e);
+            return;
+        } 
+        Ok(totp) => {
+            if matches!(label, None) {
+                if totp.account_name.trim() == "" {
+                    println!("URL contains no label and no label was provided. Cannot add this URL.");
+                    return;
+                }
+                label = Some(totp.account_name.clone())
+            }
+            if label_exists(label.as_ref().unwrap(), cfg) {
+                println!("Label \"{}\" already exists. Not adding this URL.", label.as_ref().unwrap());
+                return;
+            }
+            cfg.available_totps.push( TotpConfig {
+                label: label.clone().unwrap(),
+                totp_details: totp
+            });
+            if cfg.available_totps.len() == 1 {
+                cfg.default_totp = label.clone();
+                *current_label = label;
+            }
+        },
+    }
+}
+
+
+
+fn add_otpauth_migration(url: String, mut label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
+    println!("Sorry, \"otpauth-migration\" URLs aren't supported yet. But they're coming soon!");
+}
+
+fn add_qr_path_url(url: String, label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
+    let prefix = "qr-path://";
+    if &url[..10] != prefix {
+        println!("Couldn't extract path from qr-path URL. Expected fromat is \"qr-path://<path-to-file>\"");
+        return;
+    }
+    let path = PathBuf::from(&url[10..]);
+
+    let inner_url = match get_url_from_qr_path(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("Got error retrieving inner URL from QR image path: {e}");
+            return;
+        }
+    };
+    println!("Got inner URL \"{inner_url}\" from QR code image.");
+    do_add(inner_url, label, current_label, cfg);
+}
+
+fn get_url_from_qr_path(path: &PathBuf) -> Result<String, Box<dyn Error>> {
+    let img = image::open(path)?;
+
+    let decoder = bardecoder::default_decoder();
+
+    let url = decoder.decode(&img)
+        .pop()
+        .ok_or(GenericError::new("Failed to find QR code in provided image."))??;
+
+    Ok(url)
 }
 
 fn do_del(label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
