@@ -12,6 +12,13 @@ serde = "1.0"
 serde_yaml = "0.9"
 totp-rs = { version = "3.0.1", features = ["otpauth", "serde_support"] }
 cli-clipboard = "*"
-bardecoder = "0.3.0"
+#bardecoder = { version = "0.4.0", features = ["debug-images"] }
+bardecoder = "0.4.0"
 image = "0.23"
 anyhow = "*"
+prost = "0.11.5"
+base64 = "0.20.0"
+urlencoding = "2.1.2"
+
+[build-dependencies]
+prost-build = "0.11.5"

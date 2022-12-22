@@ -6,6 +6,12 @@ use serde::{Serialize, Deserialize};
 mod generic_error;
 use generic_error::GenericError;
 
+mod migration;
+use migration::proto_message::Payload;
+use prost::Message;
+
+use base64;
+
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 #[clap(propagate_version = true)]
@@ -185,6 +191,14 @@ fn do_use(label: String, current_label: &mut Option<String>, cfg: &GeneralConfig
 }
 
 fn do_add(url: String, label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
+    let url = match urlencoding::decode(&url) {
+        Ok(decoded_url) => decoded_url.into_owned(),
+        Err(e) => {
+            println!("Error decoding URL: {}", e);
+            return;
+        }
+    };
+    
     let colon_pos = url.find(':');
     if matches!(colon_pos, None) {
         println!("Invalid URL: \"{}\"", url);
@@ -238,14 +252,62 @@ fn add_otpauth_url(url: String, mut label: Option<String>, current_label: &mut O
 }
 
 
-
 fn add_otpauth_migration(url: String, mut label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
-    println!("Sorry, \"otpauth-migration\" URLs aren't supported yet. But they're coming soon!");
+    let prefix = "otpauth-migration://offline?data=";
+    if &url[..prefix.len()] != prefix {
+        println!("Couldn't base64 payload. Expected fromat is \"otpauth-migration://offline?data=<base64_payload>\"");
+        return;
+    }
+    
+    let base64_payload = &url[prefix.len()..];
+    match base64::decode(base64_payload) {
+        Err(e) => {
+            println!("Error decoding base64: {}", e);
+            return;
+        },
+        Ok(data) => {
+            match Payload::decode(&data[..]) {
+                Err(e) => {
+                    println!("Error parsing decoded bytes into TOTP configuration: {}", e);
+                    return;
+                },
+                Ok(payload)=> {
+                    let totp: TOTP = match payload.into() {
+                        Err(e) =>  {
+                            println!("Error parsing TOTP configuration from Google migration payload: {}", e);
+                            return;
+                        }
+                        Ok(totp) => totp,
+                    };
+
+                    if matches!(label, None) {
+                        if totp.account_name.trim() == "" {
+                            println!("URL contains no label and no label was provided. Cannot add this URL.");
+                            return;
+                        }
+                        label = Some(totp.account_name.clone())
+                    }
+                    if label_exists(label.as_ref().unwrap(), cfg) {
+                        println!("Label \"{}\" already exists. Not adding this URL.", label.as_ref().unwrap());
+                        return;
+                    }
+                    cfg.available_totps.push( TotpConfig {
+                        label: label.clone().unwrap(),
+                        totp_details: totp
+                    });
+                    if cfg.available_totps.len() == 1 {
+                        cfg.default_totp = label.clone();
+                        *current_label = label;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn add_qr_path_url(url: String, label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
     let prefix = "qr-path://";
-    if &url[..10] != prefix {
+    if &url[..prefix.len()] != prefix {
         println!("Couldn't extract path from qr-path URL. Expected fromat is \"qr-path://<path-to-file>\"");
         return;
     }
@@ -265,8 +327,10 @@ fn add_qr_path_url(url: String, label: Option<String>, current_label: &mut Optio
 fn get_url_from_qr_path(path: &PathBuf) -> Result<String, Box<dyn Error>> {
     let img = image::open(path)?;
 
-    let decoder = bardecoder::default_decoder();
+    let mut builder = bardecoder::default_builder();
+    builder.prepare(Box::new(bardecoder::prepare::BlockedMean::new(7, 9)));
 
+    let decoder = builder.build();
     let url = decoder.decode(&img)
         .pop()
         .ok_or(GenericError::new("Failed to find QR code in provided image."))??;
