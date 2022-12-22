@@ -28,9 +28,9 @@ enum TotpCommand {
         label: String
     },
     
-    /// Add a new TOTP config via a URL. Supported schemas are "otpauth" and "otpauth-migration"
+    /// Add a new TOTP config via a URL. Supported schemes are "otpauth", "otpauth-migration", and "qr-path"
     Add { 
-        /// URL specifying TOTP config.  Supported schemas: totpauth, otpauth-migration
+        /// URL specifying TOTP config.  Supported schemes: totpauth, otpauth-migration, and qr-path.
         url: String, 
         /// Label for TOTP config. (Optional if included in URL)
         label: Option<String> 
