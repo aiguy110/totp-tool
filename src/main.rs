@@ -222,7 +222,7 @@ fn do_add(url: String, label: Option<String>, current_label: &mut Option<String>
 }
 
 fn add_otpauth_url(url: String, mut label: Option<String>, current_label: &mut Option<String>, cfg: &mut GeneralConfig) {
-    match TOTP::<Vec<u8>>::from_url(url) {
+    match TOTP::from_url(url) {
         Err(e) => {
             println!("Error processing URL: {}", e);
             return;

@@ -10,7 +10,8 @@ self-storage = { git = "https://github.com/aiguy110/self-storage", branch = "mas
 clap = { version = "3.1.12", features = ["derive"] }
 serde = "1.0"
 serde_yaml = "0.9"
-totp-rs = { version = "3.0.1", features = ["otpauth", "serde_support"] }
+#totp-rs = { version = "3.0.1", features = ["otpauth", "serde_support"] }
+totp-rs = { git = "https://github.com/aiguy110/totp-rs", features = ["otpauth", "serde_support", "no_secret_length_req"] }
 cli-clipboard = "*"
 #bardecoder = { version = "0.4.0", features = ["debug-images"] }
 bardecoder = "0.4.0"
